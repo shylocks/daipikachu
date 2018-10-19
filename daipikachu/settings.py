@@ -25,7 +25,7 @@ SECRET_KEY = 'ix4fylrgs_xhbq39h%tg=^agp!*^nkbh%64=!2)5@j^0c1pg44'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['www.shylocks.ml','shylocks.ml','127.0.0.1']
 
 
 # Application definition
