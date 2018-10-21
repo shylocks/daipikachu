@@ -16,7 +16,10 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 from zklover import views
+
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('test/',views.api)
+    path('api/getVisData', views.getVisData),
+    path('api/getGifData', views.getGifData),
+    path('api/getItemData', views.getItemData),
 ]
