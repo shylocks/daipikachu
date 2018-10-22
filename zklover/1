@@ -1,0 +1,13 @@
+{
+  "Station_Id_C": "54511",
+  "Datetime": "2018-10-22 12:00:00",
+  "City": "北京",
+  "TEM_Max_24h": 18.3,
+  "TEM_Min_24h": 7.7,
+  "PRE_24h": 0,
+  "WIN_D": 319.7,
+  "WIN_S": 1,
+  "WEP": "http://image.data.cma.cn/static/image/forecast/bigIcon/0.png",
+  "wind": "北偏西1级",
+  "weather": "晴"
+}

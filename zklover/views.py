@@ -7,6 +7,8 @@ from skimage import io
 from skimage.transform import resize
 from . import models
 import re
+import json
+from . import weather
 
 
 # Create your views here.
@@ -29,6 +31,11 @@ def getGifData(request):
     elif not datacode.find('nmc') == -1:
         nmc_code = datacode.split("_")
         r = nmc(nmc_code[1], nmc_code[2], d_datetime)
+        img_dict_list = r['data']
+    elif not datacode.find('DATUM') == -1:
+        target = models.Datum.objects.filter(datacode=datacode).first()
+        nmc_code = datacode.split("*")
+        r = datum(nmc_code[1], nmc_code[2], nmc_code[3], int(target.type))
         img_dict_list = r['data']
     else:
         url = "http://data.cma.cn/weatherGis/web/bmd/VisDataDef/getVisData?d_datetime=" + d_datetime + "&datacode=" + datacode
@@ -53,7 +60,8 @@ def getItemData(request):
     for item in item_list:
         print(type(item.fathername), item.fathername)
         data["data"].append({"fathername": item.fathername, "name": item.name, "datacode": item.datacode})
-    return JsonResponse(data)
+    content = json.dumps(data, ensure_ascii=False)
+    return HttpResponse(content, content_type='application/json; charset=utf-8')
 
 
 def getVisData(request):
@@ -66,8 +74,12 @@ def getVisData(request):
     if not datacode.find("FY4A") == -1:
         return JsonResponse(fy4a(datacode, d_datetime))
     if not datacode.find("nmc") == -1:
-        nmc_code = datacode.split("_")
+        nmc_code = datacode.split("*")
         return JsonResponse(nmc(nmc_code[1], nmc_code[2], d_datetime))
+    if not datacode.find("DATUM") == -1:
+        target = models.Datum.objects.filter(datacode=datacode).first()
+        nmc_code = datacode.split("_")
+        return JsonResponse(datum(nmc_code[1], nmc_code[2], nmc_code[3], int(target.type)))
     url = "http://data.cma.cn/weatherGis/web/bmd/VisDataDef/getVisData?d_datetime=" + d_datetime + "&datacode=" + datacode
     http = urllib3.PoolManager()
     r = http.request('GET', url)
@@ -106,8 +118,27 @@ def fy4a(datacode, d_datetime):
     return data
 
 
+def getDatumItem(request):
+    name = request.GET.get("name")
+    if not name:
+        item_list = models.Datum.objects.all()
+    else:
+        item_list = models.Datum.objects.filter(name__contains='name')
+    data = {"status": 1, "data": []}
+    for item in item_list:
+        print(type(item.fathername), item.fathername)
+        data["data"].append({"grandfathername": item.grandfathername, "fathername": item.fathername, "name": item.name,
+                             "datacode": item.datacode, "type": item.type})
+    content = json.dumps(data, ensure_ascii=False)
+    return HttpResponse(content, content_type='application/json; charset=utf-8')
+
+
 def nmc(nmc_code, datacode, d_datetime):
-    url = "http://www.nmc.cn/publish/" + nmc_code + "/" + datacode + ".html"
+    if not nmc_code.find('nwpc') == -1:
+        url = "http://www.nmc.cn/publish/" + nmc_code + "/" + datacode + ".htm"
+    else:
+        url = "http://www.nmc.cn/publish/" + nmc_code + "/" + datacode + ".html"
+    print(url)
     http = urllib3.PoolManager()
     r = http.request("GET", url)
     html = r.data.decode()
@@ -119,3 +150,72 @@ def nmc(nmc_code, datacode, d_datetime):
                              "v_SHIJIAN": d_datetime + ds[78:82],
                              "c_IYMDHMS": d_datetime + ds[78:82]})
     return data
+
+
+def datum(c_type, mon, idx, d_type):
+    surl = 'http://image.data.cma.cn/climateImage/'
+    burl = '/SURF_CLI_CHN_MUL_MUT_19712000_ATLAS-'
+    data = {'maxdate': datetime.datetime.now().strftime('%Y%m%d'), "data": []}
+    if d_type == 2:
+        data["data"].append({"id": 1, "fileURL": surl + c_type + burl + mon + "-" + c_type + "-" + idx + ".png",
+                             "v_SHIJIAN": "",
+                             "c_IYMDHMS": ""})
+    else:
+        for i in range(13):
+            data["data"].append(
+                {"id": i,
+                 "fileURL": surl + c_type + burl + mon + "-" + c_type + "-" + idx + "-" + str(i).zfill(2) + ".png",
+                 "v_SHIJIAN": "",
+                 "c_IYMDHMS": ""})
+    return data
+
+
+def getProvinceList(request):
+    http = urllib3.PoolManager()
+    url = "http://data.cma.cn/weatherGis/web/dmd/chinaprovincedic/provincelist"
+    r = http.request("GET", url)
+    data = eval(r.data.decode())
+    content = json.dumps(data, ensure_ascii=False)
+    return HttpResponse(content, content_type='application/json; charset=utf-8')
+
+
+def getStationList(request):
+    provincecode = request.GET.get("provincecode")
+    http = urllib3.PoolManager()
+    url = "http://data.cma.cn/weatherGis/web/bmd/stationinfo/getStationSurf?provincecode=" + provincecode
+    r = http.request("GET", url)
+    data = eval(r.data.decode())
+    content = json.dumps(data, ensure_ascii=False)
+    return HttpResponse(content, content_type='application/json; charset=utf-8')
+
+
+def getForecastInfo(request):
+    cityname = getCityName(request.GET.get("location"))
+    if not models.Station.objects.filter(cname=cityname).first():
+        stationId = models.Station.objects.filter(cname__contains="北京").first().stationid
+    else:
+        stationId = models.Station.objects.filter(cname__contains=cityname).first().stationid
+    http = urllib3.PoolManager()
+    url = "http://data.cma.cn/forecast/getForecastInfo?stationId=" + stationId
+    r = http.request("GET", url)
+    data = eval(r.data.decode())
+    data['wind'] = weather.windDri(data['WIN_D']) + weather.windlevel(data['WIN_S'])
+    data['weather'] = weather.wth[data['WEP']]
+    data['WEP'] = "http://image.data.cma.cn/static/image/forecast/bigIcon/" + str(data['WEP']) + ".png"
+    content = json.dumps(data, ensure_ascii=False)
+    return HttpResponse(content, content_type='application/json; charset=utf-8')
+
+
+def getCityName(location='39.934,116.329'):
+    import requests
+    r = requests.get(url='http://api.map.baidu.com/geocoder/v2/',
+                     params={'location': location, 'ak': '23D1VgIGjVSqoGqh4SWrAWE5IdgHNmby', 'output': 'json'})
+    result = r.json()
+    if not result['result']['addressComponent']['city']:
+        return '北京'
+    else:
+        return result['result']['addressComponent']['city']
+
+
+def test(request):
+    return HttpResponse("ok")

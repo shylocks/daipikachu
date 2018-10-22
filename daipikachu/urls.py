@@ -22,4 +22,9 @@ urlpatterns = [
     path('api/getVisData', views.getVisData),
     path('api/getGifData', views.getGifData),
     path('api/getItemData', views.getItemData),
+    path('api/getDatumItem', views.getDatumItem),
+    path('api/getProvinceItem', views.getProvinceList),
+    path('api/getStationItem', views.getStationList),
+    path('api/getForecastInfo', views.getForecastInfo),
+    path('test',views.test)
 ]
