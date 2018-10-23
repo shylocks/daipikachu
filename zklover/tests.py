@@ -34,10 +34,15 @@
 #         for station in station_list:
 #             models.Station.objects.create(provincecode=province['provincecode'], provincename=province['provincename'],
 #                                           cname=station['cname'], stationid=station['v01301'])
-#     return 1
-import requests
-r = requests.get(url='http://api.map.baidu.com/geocoder/v2/',
-                 params={'location': '39.934,116.329', 'ak': '23D1VgIGjVSqoGqh4SWrAWE5IdgHNmby', 'output': 'json'})
-result = r.json()
-city = result['result']['addressComponent']['city']
-print(city)
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+filename = 'data.raw'
+with open(filename,'w') as f:
+    for i in range(255):
+        for j in range(255):
+            f.write(str((i+j)/512)+' ')
+        f.write('\n')
+#plt.imshow(s,cmap='gray')
+#plt.show()
+

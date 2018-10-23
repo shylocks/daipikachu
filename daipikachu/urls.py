@@ -15,6 +15,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from django.conf.urls import url
 from zklover import views
 
 urlpatterns = [
@@ -27,5 +28,6 @@ urlpatterns = [
     path('api/getStationItem', views.getStationList),
     path('api/getForecastInfo', views.getForecastInfo),
     path('api/getChartsData', views.getChartsData),
+    path('', views.homepage),
     path('test',views.test)
 ]

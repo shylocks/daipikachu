@@ -8,7 +8,7 @@ class Items(models.Model):
     fathername = models.CharField(max_length=255, verbose_name="父级菜单")
     grandfathername = models.CharField(max_length=255, verbose_name="上级菜单")
     datacode = models.CharField(max_length=255, verbose_name="代码")
-
+    type = models.IntegerField()
 
 class Fy4h(models.Model):
     displaynamechn = models.CharField(max_length=255, verbose_name="名称")
