@@ -26,5 +26,6 @@ urlpatterns = [
     path('api/getProvinceItem', views.getProvinceList),
     path('api/getStationItem', views.getStationList),
     path('api/getForecastInfo', views.getForecastInfo),
+    path('api/getChartsData', views.getChartsData),
     path('test',views.test)
 ]

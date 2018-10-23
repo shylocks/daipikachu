@@ -54,6 +54,7 @@ def getGifData(request):
 
 
 def getItemData(request):
+
     name = request.GET.get("name")
     item_list = models.Items.objects.filter(grandfathername=name).all()
     data = {"status": 1, "data": []}
@@ -81,6 +82,7 @@ def getVisData(request):
         nmc_code = datacode.split("_")
         return JsonResponse(datum(nmc_code[1], nmc_code[2], nmc_code[3], int(target.type)))
     url = "http://data.cma.cn/weatherGis/web/bmd/VisDataDef/getVisData?d_datetime=" + d_datetime + "&datacode=" + datacode
+    print(url)
     http = urllib3.PoolManager()
     r = http.request('GET', url)
     return JsonResponse(eval(r.data))
@@ -123,7 +125,7 @@ def getDatumItem(request):
     if not name:
         item_list = models.Datum.objects.all()
     else:
-        item_list = models.Datum.objects.filter(name__contains='name')
+        item_list = models.Datum.objects.filter(name__contains=name)
     data = {"status": 1, "data": []}
     for item in item_list:
         print(type(item.fathername), item.fathername)
@@ -189,6 +191,27 @@ def getStationList(request):
     return HttpResponse(content, content_type='application/json; charset=utf-8')
 
 
+def getChartsData(request):
+    stationId = request.GET.get("stationId")
+    datacode = request.GET.get("datacode")
+    if not stationId:
+        stationId = models.Station.objects.filter(cname__contains="北京").first().stationid
+    charts_data = models.Charts.objects.filter(stationid=stationId, datacode=datacode).first()
+    data = {}
+    if not charts_data:
+        data['status'] = '-1'
+    else:
+        data['status'] = '1'
+        data['parms'] = eval(charts_data.parms)
+        data['data'] = eval(charts_data.data)
+    content = json.dumps(data, ensure_ascii=False)
+    return HttpResponse(content, content_type='application/json; charset=utf-8')
+
+
+def api(request):
+    return redirect("https://www.showdoc.cc/180958275778100")
+
+
 def getForecastInfo(request):
     cityname = getCityName(request.GET.get("location"))
     if not models.Station.objects.filter(cname=cityname).first():
@@ -218,4 +241,16 @@ def getCityName(location='39.934,116.329'):
 
 
 def test(request):
+    station_list = models.Station.objects.all()
+    data_code_list = ['{"xseries":{"V04002": "月份"}, "yseries":{"V12011": "累年各月极端最高天气", "V12012": "累年各月极端最低天气"},"x":"月","y":"温度值(℃)"}',
+                      '{"xseries":{"V04002": "月份"}, "yseries":{"V12001_701": "累年各月平均气温", "V12011_701": "累年各月平均最高气温", "V12012_701": "累年各月平均最低气温"} ,"x":"月","y":"温度值(℃)"}',
+                      '{"xseries":{"V04002": "月份"}, "yseries":{"V13306_701": "降水量值"},"x":"月","y":"降水量值(mm)"}',
+                      '{"xseries":{"V04002": "月份"}, "yseries":{"V13060_MAX": "最大降水量值"},"x":"月","y":"降水量值(mm)"}',
+                      '{"xseries":{"V04002": "月份"}, "yseries":{"V10004_701": "气压值"},"x":"月","y":"气压值(hPa)"}',
+                      '{"xseries":{"V04002": "月份"}, "yseries":{"V13003_701":"累年各月平均相对湿度"},"x":"月","y":"湿度值(%)"}']
+    for station in station_list:
+        print(station.id)
+        data_list = models.Charts.objects.filter(stationid=station.stationid).all()
+        for i, data in enumerate(data_list):
+            models.Charts.objects.filter(id=data.id).update(parms=data_code_list[i])
     return HttpResponse("ok")
