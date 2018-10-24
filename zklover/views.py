@@ -15,7 +15,7 @@ from . import weather
 
 
 def getGifData(request):
-    d_datetime = request.GET.get("d_datetime")
+    d_datetime = request.GET.get("s_datetime")
     if not d_datetime:
         d_datetime = datetime.datetime.now().strftime('%Y%m%d')
     quality = request.GET.get("quality")
@@ -29,7 +29,7 @@ def getGifData(request):
         r = fy4a(datacode, d_datetime)
         img_dict_list = r['data']
     elif not datacode.find('nmc') == -1:
-        nmc_code = datacode.split("*")
+        nmc_code = datacode.split("[")
         r = nmc(nmc_code[1], nmc_code[2], d_datetime)
         img_dict_list = r['data']
     elif not datacode.find('DATUM') == -1:
@@ -57,10 +57,11 @@ def getGifData(request):
 def getItemData(request):
     name = request.GET.get("name")
     item_list = models.Items.objects.filter(grandfathername=name).all()
-    data = {"status": 1, "data": []}
+    data = {"status": 1, "data": {}}
     for item in item_list:
-        print(type(item.fathername), item.fathername)
-        data["data"].append({"fathername": item.fathername, "name": item.name, "datacode": item.datacode})
+        if not item.fathername in data["data"].keys():
+            data["data"][item.fathername] = []
+        data["data"][item.fathername].append({"name": item.name, "datacode": item.datacode,"imgUrl":item.datacode.replace("/",'')})
     content = json.dumps(data, ensure_ascii=False)
     return HttpResponse(content, content_type='application/json; charset=utf-8')
 
@@ -68,6 +69,7 @@ def getItemData(request):
 def getVisData(request):
     d_datetime = request.GET.get("d_datetime")
     datacode = request.GET.get("datacode")
+    print(datacode)
     data_type = models.Items.objects.filter(datacode=datacode).first().type
     if not d_datetime:
         if data_type == 1:
@@ -79,7 +81,7 @@ def getVisData(request):
     if not datacode.find("FY4A") == -1:
         return JsonResponse(fy4a(datacode, d_datetime))
     if not datacode.find("nmc") == -1:
-        nmc_code = datacode.split("*")
+        nmc_code = datacode.split("[")
         content = json.dumps(nmc(nmc_code[1], nmc_code[2], d_datetime), ensure_ascii=False)
         return HttpResponse(content, content_type='application/json; charset=utf-8')
     if not datacode.find("DATUM") == -1:
@@ -96,7 +98,7 @@ def getVisData(request):
         data_list = data['data']
         data['selector'] = []
         for t in data_list:
-            data['selector'].append(t['v_SHIJIAN'][8:12])
+            data['selector'].append(t['v_SHIJIAN'][8:10]+':'+t['v_SHIJIAN'][10:12])
     content = json.dumps(data, ensure_ascii=False)
     return HttpResponse(content, content_type='application/json; charset=utf-8')
 
@@ -113,7 +115,7 @@ def fy2g(datacode, d_datetime):
                 data["data"].append({"id": id, "fileURL": "http://img.nsmc.org.cn/CLOUDIMAGE/FY2G/lan/" + t,
                                      "v_SHIJIAN": d_datetime + t[26:30] + "00",
                                      "c_IYMDHMS": d_datetime + t[26:30] + "00"})
-                data['selector'].append(t[26:30])
+                data['selector'].append(t[26:28])
     else:
         for i in range(24):
             data["data"].append({"id": i,
@@ -121,7 +123,7 @@ def fy2g(datacode, d_datetime):
                                      i).zfill(2) + "00.jpg",
                                  "v_SHIJIAN": d_datetime + str(i).zfill(2) + "0000",
                                  "c_IYMDHMS": d_datetime + str(i).zfill(2) + "0000"})
-            data['selector'].append(str(i).zfill(2) + "0000")
+            data['selector'].append(str(i).zfill(2) + ":00:00")
     return data
 
 
@@ -141,25 +143,29 @@ def fy4a(datacode, d_datetime):
         data["data"].append({"id": id, "fileURL": r.get_redirect_location().replace(today, d_datetime),
                              "v_SHIJIAN": d_datetime + ds['dataTime'],
                              "c_IYMDHMS": d_datetime + ds['dataTime']})
-        data['selector'].append(ds['dataTime'][0:4])
+        data['selector'].append(ds['dataTime'][0:2]+":"+ds['dataTime'][2:4])
     return data
 
 
 def getDatumItem(request):
     name = request.GET.get("name")
+    data = {"status": 1, "data": []}
     if not name:
         item_list = models.Datum.objects.all()
+        for item in item_list:
+            if item.fathername not in data['data']:
+                data['data'].append(item.fathername)
     else:
-        item_list = models.Datum.objects.filter(name__contains=name)
-    data = {"status": 1, "data": []}
-    for item in item_list:
-        data["data"].append({"grandfathername": item.grandfathername, "fathername": item.fathername, "name": item.name,
-                             "datacode": item.datacode, "type": item.type})
+        item_list = models.Datum.objects.filter(fathername__contains=name)
+        for item in item_list:
+            data["data"].append({"name": item.name,
+                                 "datacode": item.datacode, "type": item.type})
     content = json.dumps(data, ensure_ascii=False)
     return HttpResponse(content, content_type='application/json; charset=utf-8')
 
 
 def nmc(nmc_code, datacode, d_datetime):
+    print(datacode)
     if not nmc_code.find('nwpc') == -1:
         url = "http://www.nmc.cn/publish/" + nmc_code + "/" + datacode + ".htm"
     else:
@@ -172,7 +178,7 @@ def nmc(nmc_code, datacode, d_datetime):
     ds_list = pat.findall(html)
     pat = re.compile('ymd:\'(.*?)\'}\)', re.S)
     selector_list = pat.findall(html)
-    data = {'maxdate': datetime.datetime.now().strftime('%Y%m%d'), "data": [], "dataType": 1, 'selector' : []}
+    data = {'maxdate': datetime.datetime.now().strftime('%Y%m%d'), "data": [], "dataType": 1, 'selector': []}
     for i, ds in enumerate(ds_list):
         data["data"].append({"id": i, "fileURL": "http://image.nmc.cn" + ds[0:ds.find('?')],
                              "v_SHIJIAN": d_datetime + ds[78:82],
@@ -245,6 +251,7 @@ def homepage(request):
 
 def getForecastInfo(request):
     cityname = getCityName(request.GET.get("location"))
+    cityname = cityname[:cityname.find("市")]
     if not models.Station.objects.filter(cname=cityname).first():
         stationId = models.Station.objects.filter(cname__contains="北京").first().stationid
     else:
@@ -272,17 +279,7 @@ def getCityName(location='39.934,116.329'):
 
 
 def test(request):
-    station_list = models.Station.objects.all()
-    data_code_list = [
-        '{"xseries":{"V04002": "月份"}, "yseries":{"V12011": "累年各月极端最高天气", "V12012": "累年各月极端最低天气"},"x":"月","y":"温度值(℃)"}',
-        '{"xseries":{"V04002": "月份"}, "yseries":{"V12001_701": "累年各月平均气温", "V12011_701": "累年各月平均最高气温", "V12012_701": "累年各月平均最低气温"} ,"x":"月","y":"温度值(℃)"}',
-        '{"xseries":{"V04002": "月份"}, "yseries":{"V13306_701": "降水量值"},"x":"月","y":"降水量值(mm)"}',
-        '{"xseries":{"V04002": "月份"}, "yseries":{"V13060_MAX": "最大降水量值"},"x":"月","y":"降水量值(mm)"}',
-        '{"xseries":{"V04002": "月份"}, "yseries":{"V10004_701": "气压值"},"x":"月","y":"气压值(hPa)"}',
-        '{"xseries":{"V04002": "月份"}, "yseries":{"V13003_701":"累年各月平均相对湿度"},"x":"月","y":"湿度值(%)"}']
-    for station in station_list:
-        print(station.id)
-        data_list = models.Charts.objects.filter(stationid=station.stationid).all()
-        for i, data in enumerate(data_list):
-            models.Charts.objects.filter(id=data.id).update(parms=data_code_list[i])
+    item_list = models.Items.objects.filter(datacode__contains="nmc").all()
+    for items in item_list:
+        models.Items.objects.filter(id=items.id).update(datacode=items.datacode.replace(';', '['))
     return HttpResponse("ok")
