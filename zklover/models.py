@@ -38,3 +38,9 @@ class Station(models.Model):
     provincename = models.CharField(max_length=255, verbose_name="省份名称发")
     stationid = models.CharField(max_length=255, verbose_name="观测站代码")
     cname = models.CharField(max_length=255, verbose_name="观测站名称")
+
+
+class Docs(models.Model):
+    name = models.CharField(max_length=255)
+    content = models.TextField()
+    father = models.CharField(max_length=255)

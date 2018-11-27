@@ -48,15 +48,13 @@
 #         for i, data in enumerate(data_list):
 #             models.Charts.objects.filter(id=data.id).update(parms=data_code_list[i])
 
-import numpy as np
-from PIL import Image
-import matplotlib.pyplot as plt
-filename = 'data.raw'
-with open(filename,'w') as f:
-    for i in range(255):
-        for j in range(255):
-            f.write(str((i+j)/512)+' ')
-        f.write('\n')
-#plt.imshow(s,cmap='gray')
-#plt.show()
-
+import base64
+import hmac
+import sha
+import urllib
+h = hmac.new("CcULE6lAfEbIFtKD",
+             "GET\n1540913681\n/radarfileprivate/space/cimiss_BABJ/data/metdb/rada2/J.0012.0003.S001/2018/10/23/Z_RADA_I_Z9010_20181023000000_P_DOR_RDCP_CR.PNG",
+             sha)
+urllib.quote (base64.encodestring(h.digest()).strip())
+# plt.imshow(s,cmap='gray')
+# plt.show()

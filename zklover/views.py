@@ -9,39 +9,61 @@ from . import models
 import re
 import json
 from . import weather
+import jieba
+import jieba.posseg as psg
+from bs4 import BeautifulSoup
 
 
 # Create your views here.
 
 
 def getGifData(request):
-    d_datetime = request.GET.get("s_datetime")
-    if not d_datetime:
-        d_datetime = datetime.datetime.now().strftime('%Y%m%d')
+    s_datetime = request.GET.get("s_datetime")
+    e_datetime = request.GET.get("e_datetime")
+    duration = request.GET.get("duration")
+    if not duration:
+        duration = 0.5
+    if not s_datetime:
+        s_datetime = datetime.datetime.now().strftime('%Y%m%d')
+    if not e_datetime:
+        e_datetime = datetime.datetime.now().strftime('%Y%m%d')
     quality = request.GET.get("quality")
     if not quality:
         quality = 2
     datacode = request.GET.get("datacode")
-    if not datacode.find("FY2G") == -1:
-        r = fy2g(datacode, d_datetime)
-        img_dict_list = r['data']
-    elif not datacode.find("FY4A") == -1:
-        r = fy4a(datacode, d_datetime)
-        img_dict_list = r['data']
-    elif not datacode.find('nmc') == -1:
-        nmc_code = datacode.split("[")
-        r = nmc(nmc_code[1], nmc_code[2], d_datetime)
-        img_dict_list = r['data']
-    elif not datacode.find('DATUM') == -1:
-        target = models.Datum.objects.filter(datacode=datacode).first()
-        nmc_code = datacode.split("*")
-        r = datum(nmc_code[1], nmc_code[2], nmc_code[3], int(target.type))
-        img_dict_list = r['data']
-    else:
-        url = "http://data.cma.cn/weatherGis/web/bmd/VisDataDef/getVisData?d_datetime=" + d_datetime + "&datacode=" + datacode
-        http = urllib3.PoolManager()
-        r = http.request('GET', url)
-        img_dict_list = eval(r.data)['data']
+    img_dict_list = []
+    begin = datetime.date(int(s_datetime[0:4]), int(s_datetime[4:6]), int(s_datetime[6:8]))
+    end = datetime.date(int(e_datetime[0:4]), int(e_datetime[4:6]), int(e_datetime[6:8]))
+    d = begin
+    delta = datetime.timedelta(days=1)
+    while d <= end:
+        d_datetime = d.strftime("%Y%m%d")
+        if not datacode.find("FY2G") == -1:
+            r = fy2g(datacode, d_datetime)
+            for rr in r['data']:
+                img_dict_list.append(rr)
+        elif not datacode.find("FY4A") == -1:
+            r = fy4a(datacode, d_datetime)
+            for rr in r['data']:
+                img_dict_list.append(rr)
+        elif not datacode.find('nmc') == -1:
+            nmc_code = datacode.split("[")
+            r = nmc(nmc_code[1], nmc_code[2], d_datetime)
+            for rr in r['data']:
+                img_dict_list.append(rr)
+        elif not datacode.find('DATUM') == -1:
+            target = models.Datum.objects.filter(datacode=datacode).first()
+            nmc_code = datacode.split("_")
+            r = datum(nmc_code[1], nmc_code[2], nmc_code[3], int(target.type))
+            for rr in r['data']:
+                img_dict_list.append(rr)
+        else:
+            url = "http://data.cma.cn/weatherGis/web/bmd/VisDataDef/getVisData?d_datetime=" + d_datetime + "&datacode=" + datacode
+            http = urllib3.PoolManager()
+            r = http.request('GET', url)
+            for rr in eval(r.data)['data']:
+                img_dict_list.append(rr)
+        d += delta
     print(img_dict_list)
     if not len(img_dict_list) == 0:
         frames = []
@@ -49,8 +71,9 @@ def getGifData(request):
         shape = (int(tmp[0] / int(quality)), int(tmp[1] / int(quality)))
         for img_dict in img_dict_list:
             frames.append(resize(io.imread(img_dict['fileURL']), shape))
-        imageio.mimsave("1.gif", frames, 'GIF', duration=0.5)
-        return HttpResponse(open("1.gif", "rb").read(), content_type="image/gif")
+        gif_dir = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+        imageio.mimsave(gif_dir + ".gif", frames, 'GIF', duration=duration)
+        return HttpResponse(open(gif_dir + ".gif", "rb").read(), content_type="image/gif")
     return HttpResponse("error")
 
 
@@ -61,7 +84,8 @@ def getItemData(request):
     for item in item_list:
         if not item.fathername in data["data"].keys():
             data["data"][item.fathername] = []
-        data["data"][item.fathername].append({"name": item.name, "datacode": item.datacode,"imgUrl":item.datacode.replace("/",'')})
+        data["data"][item.fathername].append(
+            {"name": item.name, "datacode": item.datacode, "imgUrl": item.datacode.replace("/", '')})
     content = json.dumps(data, ensure_ascii=False)
     return HttpResponse(content, content_type='application/json; charset=utf-8')
 
@@ -69,8 +93,12 @@ def getItemData(request):
 def getVisData(request):
     d_datetime = request.GET.get("d_datetime")
     datacode = request.GET.get("datacode")
+    datacode = datacode.replace(" ", "+")
     print(datacode)
-    data_type = models.Items.objects.filter(datacode=datacode).first().type
+    if datacode.find("DATUM") == -1:
+        data_type = models.Items.objects.filter(datacode=datacode).first().type
+    else:
+        data_type = models.Datum.objects.filter(datacode=datacode).first().type
     if not d_datetime:
         if data_type == 1:
             d_datetime = datetime.datetime.now().strftime('%Y%m%d')
@@ -87,7 +115,8 @@ def getVisData(request):
     if not datacode.find("DATUM") == -1:
         target = models.Datum.objects.filter(datacode=datacode).first()
         nmc_code = datacode.split("_")
-        return JsonResponse(datum(nmc_code[1], nmc_code[2], nmc_code[3], int(target.type)))
+        content = json.dumps(datum(nmc_code[1], nmc_code[2], nmc_code[3], int(target.type)))
+        return HttpResponse(content, content_type='application/json; charset=utf-8')
     url = "http://data.cma.cn/weatherGis/web/bmd/VisDataDef/getVisData?d_datetime=" + d_datetime + "&datacode=" + datacode
     http = urllib3.PoolManager()
     r = http.request('GET', url)
@@ -98,7 +127,7 @@ def getVisData(request):
         data_list = data['data']
         data['selector'] = []
         for t in data_list:
-            data['selector'].append(t['v_SHIJIAN'][8:10]+':'+t['v_SHIJIAN'][10:12])
+            data['selector'].append(t['v_SHIJIAN'][8:10] + ':' + t['v_SHIJIAN'][10:12])
     content = json.dumps(data, ensure_ascii=False)
     return HttpResponse(content, content_type='application/json; charset=utf-8')
 
@@ -143,8 +172,33 @@ def fy4a(datacode, d_datetime):
         data["data"].append({"id": id, "fileURL": r.get_redirect_location().replace(today, d_datetime),
                              "v_SHIJIAN": d_datetime + ds['dataTime'],
                              "c_IYMDHMS": d_datetime + ds['dataTime']})
-        data['selector'].append(ds['dataTime'][0:2]+":"+ds['dataTime'][2:4])
+        data['selector'].append(ds['dataTime'][0:2] + ":" + ds['dataTime'][2:4])
     return data
+
+
+def search(request):
+    data = {'status': -1}
+    name = request.GET.get("name")
+    if name:
+        data['status'] = 1
+        data['data'] = []
+        item_query_list = []
+        item_query_list.append(models.Datum.objects.filter(grandfathername__contains=name).all())
+        item_query_list.append(models.Datum.objects.filter(fathername__contains=name).all())
+        item_query_list.append(models.Datum.objects.filter(name__contains=name).all())
+        item_query_list.append(models.Items.objects.filter(grandfathername__contains=name).all())
+        item_query_list.append(models.Items.objects.filter(fathername__contains=name).all())
+        item_query_list.append(models.Items.objects.filter(name__contains=name).all())
+        datacode_list = []
+        for item_list in item_query_list:
+            for item in item_list:
+                if item.datacode not in datacode_list:
+                    data['data'].append(
+                        {'grandfather': item.grandfathername, 'fathername': item.fathername, 'name': item.name,
+                         'datacode': item.datacode})
+
+    content = json.dumps(data, ensure_ascii=False)
+    return HttpResponse(content, content_type='application/json; charset=utf-8')
 
 
 def getDatumItem(request):
@@ -165,11 +219,7 @@ def getDatumItem(request):
 
 
 def nmc(nmc_code, datacode, d_datetime):
-    print(datacode)
-    if not nmc_code.find('nwpc') == -1:
-        url = "http://www.nmc.cn/publish/" + nmc_code + "/" + datacode + ".htm"
-    else:
-        url = "http://www.nmc.cn/publish/" + nmc_code + "/" + datacode + ".html"
+    url = "http://www.nmc.cn/publish/" + nmc_code + "/" + datacode
     print(url)
     http = urllib3.PoolManager()
     r = http.request("GET", url)
@@ -184,6 +234,8 @@ def nmc(nmc_code, datacode, d_datetime):
                              "v_SHIJIAN": d_datetime + ds[78:82],
                              "c_IYMDHMS": d_datetime + ds[78:82]})
         data['selector'].append(selector_list[i][9:])
+    datacode = 'nmc[' + nmc_code + '[' + datacode
+    data['iconURL'] = 'https://www.shylocks.ml/static/' + datacode.replace('/', '') + '.png'
     return data
 
 
@@ -197,14 +249,14 @@ def datum(c_type, mon, idx, d_type):
                              "c_IYMDHMS": ""})
         data['dataType'] = 2
     else:
-        for i in range(13):
+        for i in range(12):
             data["data"].append(
                 {"id": i,
-                 "fileURL": surl + c_type + burl + mon + "-" + c_type + "-" + idx + "-" + str(i).zfill(2) + ".png",
+                 "fileURL": surl + c_type + burl + mon + "-" + c_type + "-" + idx + "-" + str(i + 1).zfill(2) + ".png",
                  "v_SHIJIAN": "",
                  "c_IYMDHMS": ""})
             data['dataType'] = 1
-        data['selector'] = [str(w).zfill(2) + "月" for w in range(13)]
+        data['selector'] = [str(w + 1).zfill(2) + "月" for w in range(12)]
 
     return data
 
@@ -245,6 +297,30 @@ def getChartsData(request):
     return HttpResponse(content, content_type='application/json; charset=utf-8')
 
 
+def getCharts(request):
+    stationId = request.GET.get("stationId")
+    datacode = request.GET.get("datacode")
+    if not stationId:
+        stationId = models.Station.objects.filter(cname__contains="北京").first().stationid
+    charts_data = models.Charts.objects.filter(stationid=stationId, datacode=datacode).first()
+    data = {'status': '', 'series': [], 'yAxis': {}, 'categories': ''}
+    if not charts_data:
+        data = {'status': '-1'}
+    else:
+        data = {'status': '1', 'series': [], 'yAxis': {}, 'categories': ''}
+        for key, value in eval(charts_data.parms)['yseries'].items():
+            data_list = []
+            for d in eval(charts_data.data):
+                data_list.append(d[key])
+            data['series'].append({'name': value, 'data': data_list})
+            data['yAxis'] = {
+                'title': eval(charts_data.parms)['y']
+            }
+            data['categories'] = [str(i + 1) + '月' for i in range(12)]
+    content = json.dumps(data, ensure_ascii=False)
+    return HttpResponse(content, content_type='application/json; charset=utf-8')
+
+
 def homepage(request):
     return redirect("https://www.showdoc.cc/180958275778100")
 
@@ -278,8 +354,89 @@ def getCityName(location='39.934,116.329'):
         return result['result']['addressComponent']['city']
 
 
+def robot(request):
+    data = {'status': -1}
+    docs_list = models.Docs.objects.all()
+    for docs in docs_list:
+        jieba.add_word(docs.name)
+    s = request.GET.get("message")
+    res_list = psg.cut(s)
+    print([(x.word, x.flag) for x in psg.cut(s)])
+    word_list = [x.word for x in res_list if x.flag == 'x']
+    if len(word_list):
+        key = docs_list.filter(name=word_list[0]).first()
+        if key:
+            data = {'status': 1, 'name': key.name, 'content': ['聪明的大咖找到啦~\n' + key.name + ',' + key.content]}
+    else:
+        res_list = psg.cut(s)
+        word_list = [x.word for x in res_list if x.flag.startswith('n')]
+        if len(word_list):
+            key = docs_list.filter(name=word_list[0]).first()
+            if key:
+                if key.father.startswith('m'):
+                    data = {'status': 2, 'name': key.name,
+                            'content': ['你找的是不是' + key.name + '?\n' + key.name + ',' + key.content]}
+                    if docs_list.filter(father=key.name).first():
+                        hint = "关于" + key.name + '你可能还想知道:\n'
+                        for keys in docs_list.filter(father=key.name).all():
+                            hint = hint + keys.name + '\n'
+                        data['content'].append(hint)
+                else:
+                    data = {'status': 1, 'name': key.name, 'content': ['聪明的大咖找到啦~\n' + key.name + ',' + key.content]}
+            else:
+                key = docs_list.filter(father__contains=word_list[0]).first()
+                if key:
+                    if docs_list.filter(father__contains=key.father[4:]).first():
+                        data = {'status': 3, 'name': key.father[5:],
+                                'content': ['你说的是不是' + key.father[5:] + '?\n该条目下包含：\n']}
+                        tmp = ""
+                        for i, d in enumerate(docs_list.filter(father__contains=key.father[4:]).all()):
+                            tmp = tmp + str(i + 1) + '. ' + d.name + '\n'
+                        data['content'].append(tmp)
+                else:
+                    key = docs_list.filter(name__contains=word_list[0]).first()
+                    if key:
+                        data = {'status': 4, 'name': key.name,
+                                'content': ['你说的是不是' + key.name + '?\n' + key.name + ',' + key.content]}
+                        if docs_list.filter(father=key.name).first():
+                            hint = "关于" + key.name + '你可能还想知道:\n'
+                            for keys in docs_list.filter(father=key.name).all():
+                                hint = hint + keys.name + '\n'
+                            data['content'].append(hint)
+    content = json.dumps(data, ensure_ascii=False)
+    return HttpResponse(content, content_type='application/json; charset=utf-8')
+
+
+def news(request):
+    http = urllib3.PoolManager()
+    url = "http://data.cma.cn/article/getList/cateId/3.html"
+    r = http.request("get", url)
+    bs = BeautifulSoup(r.data.decode().replace('<img src="/static/images/newIcon.png" class="newIcon">', ''),
+                       "html.parser")
+    data = {'status': 1, 'data': []}
+    for w in bs.find_all("li", style="list-style:none"):
+        tmp_list = [x.word for x in psg.cut(w.a.string) if x.flag == 'n']
+        if not len(tmp_list):
+            tmp = '资讯'
+        else:
+            flag = 1
+            for key in tmp_list:
+                if len(key) == 2:
+                    tmp = key
+                    flag = 0
+                    break
+            if flag:
+                tmp = '资讯'
+        data['data'].append({'key': tmp, 'title': w.a.string})
+
+    content = json.dumps(data, ensure_ascii=False)
+    return HttpResponse(content, content_type='application/json; charset=utf-8')
+
+
 def test(request):
-    item_list = models.Items.objects.filter(datacode__contains="nmc").all()
-    for items in item_list:
-        models.Items.objects.filter(id=items.id).update(datacode=items.datacode.replace(';', '['))
+    item_list = models.Docs.objects.all()
+    f = open('userdict.txt', 'w')
+    for item in item_list:
+        f.write(item.name + " 1\n")
+    f.close()
     return HttpResponse("ok")

@@ -28,6 +28,10 @@ urlpatterns = [
     path('api/getStationItem', views.getStationList),
     path('api/getForecastInfo', views.getForecastInfo),
     path('api/getChartsData', views.getChartsData),
+    path('api/getCharts', views.getCharts),
+    path('api/search',views.search),
+    path('api/robot',views.robot),
+    path('api/news',views.news),
     path('', views.homepage),
     path('test',views.test)
 ]
